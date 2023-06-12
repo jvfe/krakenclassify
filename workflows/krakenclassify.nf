@@ -50,6 +50,10 @@ include { INPUT_CHECK } from '../subworkflows/local/input_check'
 //
 include { FASTQC                      } from '../modules/nf-core/fastqc/main'
 include { MULTIQC                     } from '../modules/nf-core/multiqc/main'
+include { KRAKEN2_KRAKEN2 as KRAKEN2  } from '../modules/nf-core/kraken2/kraken2/main'
+include { BRACKEN_BRACKEN as BRACKEN  } from '../modules/nf-core/bracken/bracken/main'
+include { KRAKENTOOLS_KREPORT2KRONA as KREPORT2KRONA   } from '../modules/nf-core/krakentools/kreport2krona/main'
+include { KRONA_KTIMPORTTEXT as KTIMPORTTEXT           } from '../modules/nf-core/krona/ktimporttext/main'
 include { CUSTOM_DUMPSOFTWAREVERSIONS } from '../modules/nf-core/custom/dumpsoftwareversions/main'
 
 /*
@@ -80,6 +84,32 @@ workflow KRAKENCLASSIFY {
         INPUT_CHECK.out.reads
     )
     ch_versions = ch_versions.mix(FASTQC.out.versions.first())
+
+    KRAKEN2 (
+        INPUT_CHECK.out.reads,
+        params.kraken2_db,
+        true,
+        true
+    )
+    ch_versions = ch_versions.mix(KRAKEN2.out.versions.first())
+    ch_multiqc_files = ch_multiqc_files.mix(KRAKEN2.out.report.collect{it[1]}.ifEmpty([]))
+
+    BRACKEN (
+        KRAKEN2.out.report,
+        params.kraken2_db
+    )
+    ch_versions = ch_versions.mix(BRACKEN.out.versions.first())
+
+    KREPORT2KRONA (
+        KRAKEN2.out.report
+    )
+    ch_versions = ch_versions.mix(KREPORT2KRONA.out.versions.first())
+
+    KTIMPORTTEXT (
+        KREPORT2KRONA.out.txt
+    )
+    ch_versions = ch_versions.mix(KTIMPORTTEXT.out.versions.first())
+
 
     CUSTOM_DUMPSOFTWAREVERSIONS (
         ch_versions.unique().collectFile(name: 'collated_versions.yml')
