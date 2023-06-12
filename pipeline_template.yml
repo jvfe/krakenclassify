@@ -1,0 +1,3 @@
+prefix: jvfe
+skip:
+- nf_core_configs
