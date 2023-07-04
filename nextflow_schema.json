@@ -42,6 +42,21 @@
                 }
             }
         },
+        "kraken_options": {
+            "title": "Kraken options",
+            "type": "object",
+            "description": "",
+            "default": "",
+            "properties": {
+                "kraken2_db": {
+                    "type": "string",
+                    "default": "None",
+                    "description": "Path to kraken2/bracken database",
+                    "fa_icon": "fas fa-database"
+                }
+            },
+            "fa_icon": "fab fa-pagelines"
+        },
         "reference_genome_options": {
             "title": "Reference genome options",
             "type": "object",
@@ -209,6 +224,9 @@
             "$ref": "#/definitions/input_output_options"
         },
         {
+            "$ref": "#/definitions/kraken_options"
+        },
+        {
             "$ref": "#/definitions/reference_genome_options"
         },
         {
@@ -217,12 +235,5 @@
         {
             "$ref": "#/definitions/generic_options"
         }
-    ],
-    "properties": {
-        "kraken2_db": {
-            "type": "string",
-            "default": "None",
-            "description": "Path to kraken2/bracken database"
-        }
-    }
+    ]
 }
