@@ -50,6 +50,7 @@ include { INPUT_CHECK } from '../subworkflows/local/input_check'
 //
 include { FASTQC                      } from '../modules/nf-core/fastqc/main'
 include { MULTIQC                     } from '../modules/nf-core/multiqc/main'
+include { UNTAR                       } from '../modules/nf-core/untar/main'
 include { KRAKEN2_KRAKEN2 as KRAKEN2  } from '../modules/nf-core/kraken2/kraken2/main'
 include { BRACKEN_BRACKEN as BRACKEN  } from '../modules/nf-core/bracken/bracken/main'
 include { KRAKENTOOLS_KREPORT2KRONA as KREPORT2KRONA   } from '../modules/nf-core/krakentools/kreport2krona/main'
@@ -70,6 +71,8 @@ workflow KRAKENCLASSIFY {
     ch_versions = Channel.empty()
     ch_multiqc_files = Channel.empty()
 
+    kraken_targz = Channel.of([[id: 'krakendb'], file(params.kraken2_db)])
+
     //
     // SUBWORKFLOW: Read in samplesheet, validate and stage input files
     //
@@ -86,9 +89,17 @@ workflow KRAKENCLASSIFY {
     )
     ch_versions = ch_versions.mix(FASTQC.out.versions.first())
 
+    UNTAR (
+        kraken_targz
+    )
+
+    UNTAR.out.untar
+        .map { meta, path -> path }
+        .set { krakendb }
+
     KRAKEN2 (
         INPUT_CHECK.out.reads,
-        params.kraken2_db,
+        krakendb,
         true,
         true
     )
@@ -97,7 +108,7 @@ workflow KRAKENCLASSIFY {
 
     BRACKEN (
         KRAKEN2.out.report,
-        params.kraken2_db
+        krakendb
     )
     ch_versions = ch_versions.mix(BRACKEN.out.versions.first())
 
