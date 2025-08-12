@@ -95,6 +95,7 @@ workflow KRAKENCLASSIFY {
 
     UNTAR.out.untar
         .map { meta, path -> path }
+        .first()
         .set { krakendb }
 
     KRAKEN2 (
