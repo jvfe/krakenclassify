@@ -9,9 +9,9 @@ def summary_params = NfcoreSchema.paramsSummaryMap(workflow, params)
 // Validate input parameters
 WorkflowKrakenclassify.initialise(params, log)
 
-// TODO nf-core: Add all file path parameters for the pipeline to the list below
+// REMOVED: params.kraken2_db from the list
 // Check input path parameters to see if they exist
-def checkPathParamList = [ params.input, params.multiqc_config, params.kraken2_db, params.fasta, params.gtf ]
+def checkPathParamList = [ params.input, params.multiqc_config, params.fasta, params.gtf ]
 for (param in checkPathParamList) { if (param) { file(param, checkIfExists: true) } }
 
 // Check mandatory parameters
@@ -48,15 +48,12 @@ include { INPUT_CHECK } from '../subworkflows/local/input_check'
 //
 // MODULE: Installed directly from nf-core/modules
 //
-include { FASTQC                      } from '../modules/nf-core/fastqc/main'
-include { MULTIQC                     } from '../modules/nf-core/multiqc/main'
-include { UNTAR                       } from '../modules/nf-core/untar/main'
+// REMOVED: FASTQC, FASTP, KRAKEN2, and UNTAR modules
 include { GUNZIP as GUNZIP_FASTA      } from '../modules/nf-core/gunzip/main'
 include { GUNZIP as GUNZIP_GTF        } from '../modules/nf-core/gunzip/main'
-include { FASTP                       } from '../modules/nf-core/fastp/main'
-include { KRAKEN2_KRAKEN2 as KRAKEN2  } from '../modules/nf-core/kraken2/kraken2/main'
 include { HISAT2_ALIGN                } from '../modules/nf-core/hisat2/align/main'
 include { HISAT2_BUILD                } from '../modules/nf-core/hisat2/build/main'
+include { MULTIQC                     } from '../modules/nf-core/multiqc/main'
 include { STAR_ALIGN                  } from '../modules/nf-core/star/align/main'
 include { STAR_GENOMEGENERATE         } from '../modules/nf-core/star/genomegenerate/main'
 include { SUBREAD_FEATURECOUNTS       } from '../modules/nf-core/subread/featurecounts/main'
@@ -78,7 +75,7 @@ workflow KRAKENCLASSIFY {
     ch_versions = Channel.empty()
     ch_multiqc_files = Channel.empty()
 
-    kraken_targz = Channel.of([[id: 'krakendb'], file(params.kraken2_db)])
+    // REMOVED: kraken_targz channel creation
 
     //
     // SUBWORKFLOW: Read in samplesheet, validate and stage input files
@@ -88,29 +85,14 @@ workflow KRAKENCLASSIFY {
     )
     ch_versions = ch_versions.mix(INPUT_CHECK.out.versions)
 
-    ch_reads = INPUT_CHECK.out.reads
+    // CHANGED: The 'reads' from the input check are now considered the 'classified_reads'
+    // and will be fed directly to the alignment processes.
+    classified_reads = INPUT_CHECK.out.reads
+    classified_reads.dump(tag: "classified_reads")
 
-    ch_reads.dump(tag: "raw_reads")
+    // REMOVED: FASTQC, FASTP, UNTAR, and KRAKEN2 workflow steps.
 
-    FASTQC (
-        ch_reads
-    )
-    ch_versions = ch_versions.mix(FASTQC.out.versions.first())
-
-    FASTP(
-        ch_reads
-    )
-    ch_versions = ch_versions.mix(FASTP.out.versions.first())
-
-    UNTAR (
-        kraken_targz
-    )
-
-    UNTAR.out.untar
-        .map { meta, path -> path }
-        .first()
-        .set { krakendb }
-
+    // --- Genome and Annotation Preparation ---
     if (params.fasta.endsWith('.gz')) {
         ch_fasta    = GUNZIP_FASTA ( [ [:], params.fasta ] ).gunzip.first()
         ch_fasta_star = ch_fasta.map{it[1]}
@@ -127,16 +109,10 @@ workflow KRAKENCLASSIFY {
         ch_gtf = tuple([:], file(params.gtf))
         ch_gtf_star = ch_gtf[1]
     }
+    // --- End of Genome Prep ---
 
-    KRAKEN2 (
-        FASTP.out.reads,
-        krakendb,
-        true,
-        true
-    )
-    ch_versions = ch_versions.mix(KRAKEN2.out.versions.first())
-
-    classified_reads = KRAKEN2.out.classified_reads_fastq.map{ meta, classified_reads_fastq -> tuple( meta, classified_reads_fastq ) }
+    // REMOVED: KRAKEN2 process call
+    // REMOVED: Mapping of KRAKEN2 output to classified_reads channel
 
     HISAT2_BUILD( ch_fasta, ch_gtf )
 
@@ -186,9 +162,7 @@ workflow KRAKENCLASSIFY {
     ch_multiqc_files = ch_multiqc_files.mix(ch_workflow_summary.collectFile(name: 'workflow_summary_mqc.yaml'))
     ch_multiqc_files = ch_multiqc_files.mix(ch_methods_description.collectFile(name: 'methods_description_mqc.yaml'))
     ch_multiqc_files = ch_multiqc_files.mix(CUSTOM_DUMPSOFTWAREVERSIONS.out.mqc_yml.collect())
-    ch_multiqc_files = ch_multiqc_files.mix(FASTQC.out.zip.collect{it[1]}.ifEmpty([]))
-    ch_multiqc_files = ch_multiqc_files.mix(FASTP.out.log.collect{it[1]}.ifEmpty([]))
-    ch_multiqc_files = ch_multiqc_files.mix(KRAKEN2.out.report.collect{it[1]}.ifEmpty([]))
+    // REMOVED: FASTQC, FASTP, and KRAKEN2 output from MultiQC files
     ch_multiqc_files = ch_multiqc_files.mix(STAR_ALIGN.out.log_final.collect{it[1]}.ifEmpty([]))
     ch_multiqc_files = ch_multiqc_files.mix(HISAT2_ALIGN.out.summary.collect{it[1]}.ifEmpty([]))
     ch_multiqc_files = ch_multiqc_files.mix(SUBREAD_FEATURECOUNTS.out.summary.collect{it[1]}.ifEmpty([]))
