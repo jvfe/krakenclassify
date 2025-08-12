@@ -70,12 +70,13 @@ include { CUSTOM_DUMPSOFTWAREVERSIONS } from '../modules/nf-core/custom/dumpsoft
 // Info required for completion email and summary
 def multiqc_report = []
 
+// REFACTOR: Added a new parameter check.
+// To run the STAR aligner, launch the script with --enable_star true
+// By default, params.enable_star is false.
 workflow KRAKENCLASSIFY {
 
     ch_versions = Channel.empty()
     ch_multiqc_files = Channel.empty()
-
-    // REMOVED: kraken_targz channel creation
 
     //
     // SUBWORKFLOW: Read in samplesheet, validate and stage input files
@@ -85,53 +86,33 @@ workflow KRAKENCLASSIFY {
     )
     ch_versions = ch_versions.mix(INPUT_CHECK.out.versions)
 
-    // CHANGED: The 'reads' from the input check are now considered the 'classified_reads'
-    // and will be fed directly to the alignment processes.
     classified_reads = INPUT_CHECK.out.reads
     classified_reads.dump(tag: "classified_reads")
-
-    // REMOVED: FASTQC, FASTP, UNTAR, and KRAKEN2 workflow steps.
 
     // --- Genome and Annotation Preparation ---
     if (params.fasta.endsWith('.gz')) {
         ch_fasta    = GUNZIP_FASTA ( [ [:], params.fasta ] ).gunzip.first()
-        ch_fasta_star = ch_fasta.map{it[1]}
     } else {
         ch_fasta = tuple([:], file(params.fasta))
-        ch_fasta_star = ch_fasta[1]
     }
 
     if (params.gtf.endsWith('.gz')) {
             ch_gtf      = GUNZIP_GTF ( [ [:], params.gtf ] ).gunzip.first()
-            ch_gtf_star = ch_gtf.map{it[1]}
             ch_versions = ch_versions.mix(GUNZIP_GTF.out.versions)
     } else {
         ch_gtf = tuple([:], file(params.gtf))
-        ch_gtf_star = ch_gtf[1]
     }
     // --- End of Genome Prep ---
 
-    // REMOVED: KRAKEN2 process call
-    // REMOVED: Mapping of KRAKEN2 output to classified_reads channel
 
+    // --- HISAT2 Alignment (Default) ---
     HISAT2_BUILD( ch_fasta, ch_gtf )
 
     HISAT2_ALIGN(
         classified_reads,
         HISAT2_BUILD.out.index,
     )
-
     ch_versions = ch_versions.mix(HISAT2_ALIGN.out.versions.first())
-
-    STAR_GENOMEGENERATE(
-        ch_fasta_star, ch_gtf_star
-    )
-
-    STAR_ALIGN(
-        classified_reads,
-        STAR_GENOMEGENERATE.out.index, ch_gtf_star, false, '', ''
-    )
-    ch_versions = ch_versions.mix(STAR_ALIGN.out.versions.first())
 
     SUBREAD_FEATURECOUNTS(
         HISAT2_ALIGN.out.bam.map{ meta, path -> tuple( meta, path,  file(params.gtf)  ) }, 'gene_id'
@@ -142,9 +123,29 @@ workflow KRAKENCLASSIFY {
         SUBREAD_FEATURECOUNTS.out.counts.collect{it[1]}
     )
 
-    GATHER_COUNTS_STAR(
-        STAR_ALIGN.out.read_per_gene_tab.collect{it[1]}
-    )
+    // REFACTOR: STAR alignment is now optional.
+    // All STAR-related processes are wrapped in an if-block.
+    if (params.enable_star) {
+        // --- STAR Alignment (Optional) ---
+        // Prepare channels specifically for STAR
+        ch_fasta_star = ch_fasta.map{it[1]}
+        ch_gtf_star = ch_gtf.map{it[1]}
+
+        STAR_GENOMEGENERATE(
+            ch_fasta_star, ch_gtf_star
+        )
+
+        STAR_ALIGN(
+            classified_reads,
+            STAR_GENOMEGENERATE.out.index, ch_gtf_star, false, '', ''
+        )
+        ch_versions = ch_versions.mix(STAR_ALIGN.out.versions.first())
+
+        GATHER_COUNTS_STAR(
+            STAR_ALIGN.out.read_per_gene_tab.collect{it[1]}
+        )
+    }
+
 
     CUSTOM_DUMPSOFTWAREVERSIONS (
         ch_versions.unique().collectFile(name: 'collated_versions.yml')
@@ -162,8 +163,12 @@ workflow KRAKENCLASSIFY {
     ch_multiqc_files = ch_multiqc_files.mix(ch_workflow_summary.collectFile(name: 'workflow_summary_mqc.yaml'))
     ch_multiqc_files = ch_multiqc_files.mix(ch_methods_description.collectFile(name: 'methods_description_mqc.yaml'))
     ch_multiqc_files = ch_multiqc_files.mix(CUSTOM_DUMPSOFTWAREVERSIONS.out.mqc_yml.collect())
-    // REMOVED: FASTQC, FASTP, and KRAKEN2 output from MultiQC files
-    ch_multiqc_files = ch_multiqc_files.mix(STAR_ALIGN.out.log_final.collect{it[1]}.ifEmpty([]))
+
+    // REFACTOR: Conditionally add STAR logs to MultiQC only if the process was run.
+    if (params.enable_star) {
+        ch_multiqc_files = ch_multiqc_files.mix(STAR_ALIGN.out.log_final.collect{it[1]}.ifEmpty([]))
+    }
+
     ch_multiqc_files = ch_multiqc_files.mix(HISAT2_ALIGN.out.summary.collect{it[1]}.ifEmpty([]))
     ch_multiqc_files = ch_multiqc_files.mix(SUBREAD_FEATURECOUNTS.out.summary.collect{it[1]}.ifEmpty([]))
 
